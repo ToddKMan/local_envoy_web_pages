@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kassman MicroInverter Production</title>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h1 {
+      text-align: center;
+    }
+    #chart_div {
+      display: flex;
+      justify-content: center;
+    }
+    #menu {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    #menu select {
+      margin: 0 10px;
+    }
+    #refreshButton {
+      display: none;
+      margin-left: 10px;
+    }
+    #fullseriesButton {
+      margin-left: 10px
+    }
+  </style>
+  <script type="text/javascript">
+    google.charts.load('current', {'packages':['corechart']});
+    google.charts.setOnLoadCallback(loadAvailableFiles);
+
+    let jsonData;
+    let selectedUrl;
+    let availableFiles;
+
+    function loadAvailableFiles() {
+      fetch('https://ikassman.synology.me/invdata/sm_manifest.json', {cache: "no-store"})
+        .then(response => response.json())
+        .then(data => {
+          availableFiles = data;
+          const years = Object.keys(data).sort((a, b) => b - a);
+          populateYearDropdown(years);
+        })
+        .catch(error => {
+          console.error('Error fetching the master JSON data:', error);
+        });
+    }
+
+    function populateYearDropdown(years) {
+      const yearDropdown = document.getElementById('yearSelector');
+      yearDropdown.innerHTML = ''; // Clear existing options
+      years.forEach(year => {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        yearDropdown.appendChild(option);
+      });
+      yearDropdown.value = years[0]; // Select the latest year
+      updateMonthDropdown(years[0]);
+    }
+
+    function updateMonthDropdown(selectedYear) {
+      const months = Object.keys(availableFiles[selectedYear]).sort((a, b) => new Date(`${b} 1, 2000`) - new Date(`${a} 1, 2000`));
+      const monthDropdown = document.getElementById('monthSelector');
+      monthDropdown.innerHTML = ''; // Clear existing options
+      months.forEach(month => {
+        const option = document.createElement('option');
+        option.value = month;
+        option.textContent = month;
+        monthDropdown.appendChild(option);
+      });
+      monthDropdown.value = months[0]; // Select the latest month
+      updateFileDropdown(selectedYear, months[0]);
+    }
+
+    function updateFileDropdown(selectedYear, selectedMonth) {
+      const days = Object.keys(availableFiles[selectedYear][selectedMonth]);
+      const fileDropdown = document.getElementById('daySelector');
+      fileDropdown.innerHTML = ''; // Clear existing options
+
+      days.forEach(day => {
+        const option = document.createElement('option');
+        option.value = availableFiles[selectedYear][selectedMonth][day];
+        option.textContent = day;
+        fileDropdown.appendChild(option);
+      });
+      fileDropdown.value = availableFiles[selectedYear][selectedMonth][days[days.length-1]]; // Select the latest file
+      selectedUrl = fileDropdown.value;
+      fetchDataAndDrawChart();
+    }
+    
+    function updateFileDropdown_ttk(selectedYear, selectedMonth) {
+      const files = availableFiles[selectedYear][selectedMonth];
+      const fileDropdown = document.getElementById('daySelector');
+      fileDropdown.innerHTML = ''; // Clear existing options
+      files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file.url;
+        option.textContent = file.name;
+        fileDropdown.appendChild(option);
+      });
+      fileDropdown.value = files[files.length - 1].url; // Select the latest file
+      selectedUrl = fileDropdown.value;
+      fetchDataAndDrawChart();
+    }
+
+    function fetchDataAndDrawChart() {
+      fetch(selectedUrl, {cache: "no-store"})
+        .then(response => response.json())
+        .then(data => {
+          jsonData = data;
+          drawChart();
+          checkIfCurrentDay();
+        })
+        .catch(error => {
+          console.error('Error fetching the JSON data:', error);
+        });
+    }
+
+    function drawChart() {
+      if (!jsonData) {
+        console.error('No data available for chart.');
+        return;
+      }
+
+      var dataTable = new google.visualization.DataTable();
+      dataTable.addColumn('date', 'Date');
+
+      Object.keys(jsonData).forEach(series => {
+        dataTable.addColumn('number', series);
+      });
+
+      let rows = {};
+      Object.entries(jsonData).forEach(([series, seriesData]) => {
+        seriesData.data.forEach(point => {
+          let date = new Date(point.epoch * 1000);
+          if (!rows[date]) {
+            rows[date] = [date];
+          }
+          rows[date][Object.keys(jsonData).indexOf(series) + 1] = point.watts;
+        });
+      });
+
+      Object.keys(rows).forEach(date => {
+        while (rows[date].length < Object.keys(jsonData).length + 1) {
+          rows[date].push(null);
+        }
+      });
+
+      Object.values(rows).forEach(row => {
+        dataTable.addRow(row);
+      });
+
+      var options = {
+        title: 'Output of Individual Inverters',
+        width: 800,
+        height: 400,
+        hAxis: {
+          title: 'Time'
+        },
+        vAxis: {
+          title: 'Watts',
+          viewWindow: {
+            min: 0
+          }
+        },
+        explorer: {
+          axis: 'horizontal',
+          keepInBounds: true,
+          maxZoomIn: 10.0
+        }
+      };
+
+      var chart = new google.visualization.LineChart(document.getElementById('chart_div'));
+      chart.draw(dataTable, options);
+    }
+
+    function updateChart() {
+      selectedUrl = document.getElementById('daySelector').value;
+      fetchDataAndDrawChart();
+    }
+
+    function onYearChange() {
+      const selectedYear = document.getElementById('yearSelector').value;
+      updateMonthDropdown(selectedYear);
+    }
+
+    function onMonthChange() {
+      const selectedYear = document.getElementById('yearSelector').value;
+      const selectedMonth = document.getElementById('monthSelector').value;
+      updateFileDropdown(selectedYear, selectedMonth);
+    }
+
+    function checkIfCurrentDay() {
+      const today = new Date();
+      const selectedYear = document.getElementById('yearSelector').value;
+      const selectedMonth = document.getElementById('monthSelector').value;
+      const selectedFile = document.getElementById('daySelector').selectedOptions[0].textContent;
+
+      const currentYear = today.getFullYear();
+      const currentMonth = today.toLocaleString('default', { month: 'long' });
+      const currentDate = today.getDate();
+
+      if (parseInt(selectedYear) === currentYear && selectedMonth === currentMonth && selectedFile.includes(currentDate.toString())) {
+        document.getElementById('refreshButton').style.display = 'inline-block';
+      } else {
+        document.getElementById('refreshButton').style.display = 'none';
+      }
+    }
+
+    function refreshData() {
+      fetchDataAndDrawChart();
+    }
+  </script>
+</head>
+<body>
+  <div id="menu">
+    <select id="yearSelector" onchange="onYearChange()">
+      <!-- Years will be populated dynamically -->
+    </select>
+    <select id="monthSelector" onchange="onMonthChange()">
+      <!-- Months will be populated dynamically -->
+    </select>
+    <select id="daySelector" onchange="updateChart()">
+      <!-- Files will be populated dynamically -->
+    </select>
+    <button id="refreshButton" onclick="refreshData()">Refresh</button>
+    <a href="https://ikassman.synology.me/google/Live/monthly.html">
+      <button id="fullseriesButton">Monthly Series</button>
+    </a>
+    </div>
+  </div>
+  <div id="chart_div"></div>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Inverters by Day</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    h1 {
+      text-align: center;
+    }
+    #menu {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    #menu select {
+      margin: 0 10px;
+    }
+    #refreshButton {
+      display: none;
+      margin-left: 10px;
+    }
+    #chart_div {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+    }
+    #chart-container {
+      width: 100%;
+      height: 100%;
+    }
+    #link-container {
+      text-align: center;
+      margin-top: 20px;
+      margin-bottom: 20px;
+    }
+  </style>
+  <script type="text/javascript">
+    let jsonData;
+    let selectedUrl;
+    let availableFiles;
+
+    // Fetch the master JSON file with the available files
+    fetch('https://ikassman.synology.me/invdata/sm_manifest.json')
+      .then(response => response.json())
+      .then(data => {
+        availableFiles = data;
+        const years = Object.keys(data).sort((a, b) => b - a);
+        populateYearDropdown(years);
+      })
+      .catch(error => {
+        console.error('Error fetching the master JSON data:', error);
+      });
+
+    function populateYearDropdown(years) {
+      const yearDropdown = document.getElementById('yearSelector');
+      yearDropdown.innerHTML = ''; // Clear existing options
+      years.forEach(year => {
+        const option = document.createElement('option');
+        option.value = year;
+        option.textContent = year;
+        yearDropdown.appendChild(option);
+      });
+      yearDropdown.value = years[0]; // Select the latest year
+      updateMonthDropdown(years[0]);
+    }
+
+    function updateMonthDropdown(selectedYear) {
+      const months = Object.keys(availableFiles[selectedYear]).sort((a, b) => new Date(`${b} 1, 2000`) - new Date(`${a} 1, 2000`));
+      const monthDropdown = document.getElementById('monthSelector');
+      monthDropdown.innerHTML = ''; // Clear existing options
+      months.forEach(month => {
+        const option = document.createElement('option');
+        option.value = month;
+        option.textContent = month;
+        monthDropdown.appendChild(option);
+      });
+      monthDropdown.value = months[0]; // Select the latest month
+      updateFileDropdown(selectedYear, months[0]);
+    }
+
+    function updateFileDropdown3(selectedYear, selectedMonth) {
+      const days = availableFiles[selectedYear][selectedMonth];
+      const fileDropdown = document.getElementById('daySelector');
+      fileDropdown.innerHTML = ''; // Clear existing options
+
+
+      const option = document.createElement('option');
+      option.value = days[1];
+      option.textContent = days[1];
+      fileDropdown.appendChild(option);
+      fileDropdown.value = "some text";
+      selectedUrl = fileDropdown.value;
+      fetchDataAndDrawChart();
+    }
+
+    function updateFileDropdown(selectedYear, selectedMonth) {
+      const days = Object.keys(availableFiles[selectedYear][selectedMonth]);
+      const fileDropdown = document.getElementById('daySelector');
+      fileDropdown.innerHTML = ''; // Clear existing options
+
+      days.forEach(day => {
+        const option = document.createElement('option');
+        option.value = availableFiles[selectedYear][selectedMonth][day];
+        option.textContent = day;
+        fileDropdown.appendChild(option);
+      });
+      fileDropdown.value = availableFiles[selectedYear][selectedMonth][days[days.length-1]]; // Select the latest file
+      selectedUrl = fileDropdown.value;
+      fetchDataAndDrawChart();
+    }
+
+    function fetchDataAndDrawChart() {
+      fetch(selectedUrl)
+        .then(response => response.json())
+        .then(data => {
+          jsonData = data;
+          drawChart();
+          checkIfCurrentDay();
+        })
+        .catch(error => {
+          console.error('Error fetching the JSON data:', error);
+        });
+    }
+
+    function drawChart() {
+      if (!jsonData) {
+        console.error('No data available for chart.');
+        return;
+      }
+
+      const traces = Object.keys(jsonData).map(series => {
+        return {
+          x: jsonData[series].data.map(point => new Date(point.epoch * 1000)),
+          y: jsonData[series].data.map(point => point.watts),
+          mode: 'lines',
+          name: series
+        };
+      });
+
+      const layout = {
+        title: 'Inverters by Day',
+        xaxis: {
+          title: 'Date'
+        },
+        yaxis: {
+          title: 'Watts',
+          rangemode: 'tozero'
+        },
+        autosize: true
+      };
+
+      Plotly.newPlot('chart-container', traces, layout, { responsive: true });
+    }
+
+    function updateChart() {
+      selectedUrl = document.getElementById('daySelector').value;
+      fetchDataAndDrawChart();
+    }
+
+    function onYearChange() {
+      const selectedYear = document.getElementById('yearSelector').value;
+      updateMonthDropdown(selectedYear);tt
+    }
+
+    function onMonthChange() {
+      const selectedYear = document.getElementById('yearSelector').value;
+      const selectedMonth = document.getElementById('monthSelector').value;
+      updateFileDropdown(selectedYear, selectedMonth);
+    }
+
+    function checkIfCurrentDay() {
+      const today = new Date();
+      const selectedYear = document.getElementById('yearSelector').value;
+      const selectedMonth = document.getElementById('monthSelector').value;
+      const selectedFile = document.getElementById('daySelector').selectedOptions[0].textContent;
+
+      const currentYear = today.getFullYear();
+      const currentMonth = today.toLocaleString('default', { month: 'long' });
+      const currentDate = today.getDate();
+
+      if (parseInt(selectedYear) === currentYear && selectedMonth === currentMonth && selectedFile.includes(currentDate.toString())) {
+        document.getElementById('refreshButton').style.display = 'inline-block';
+      } else {
+        document.getElementById('refreshButton').style.display = 'none';
+      }
+    }
+
+    function refreshData() {
+      fetchDataAndDrawChart();
+    }
+
+    // Add event listener for window resize
+    window.addEventListener('resize', () => {
+      if (jsonData) {
+        drawChart();
+      }
+    });
+  </script>
+</head>
+<body>
+  <div id="menu">
+    <select id="yearSelector" onchange="onYearChange()">
+      <!-- Years will be populated dynamically -->
+    </select>
+    <select id="monthSelector" onchange="onMonthChange()">
+      <!-- Months will be populated dynamically -->
+    </select>
+    <select id="daySelector" onchange="updateChart()">
+      <!-- Files will be populated dynamically -->
+    </select>
+    <button id="refreshButton" onclick="refreshData()">Refresh</button>
+  </div>
+  <div id="chart_div">
+    <div id="chart-container"></div>
+  </div>
+  <div id="link-container">
+    <a href="https://ikassman.synology.me/plotly/Live/monthly.html">Monthly View</a>
+  </div>
+</body>
+</html>
